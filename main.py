@@ -5,16 +5,31 @@ import json
 import time
 from mistralai import Mistral
 
+# Page configuration
 st.set_page_config(layout="wide", page_title="Mistral OCR", page_icon=":material/file_present:")
+
+# Sidebar for configuration - keep only API key here
+with st.sidebar:
+    st.title("Configuration")
+    
+    # API Key Input stays in sidebar
+    api_key = st.text_input("Enter your Mistral API Key", type="password")
+    
+    st.markdown("---")
+    st.markdown("### About")
+    st.markdown("Mistral OCR extracts text from PDFs and images using Mistral OCR API.")
+    st.markdown("---")
+
+
+# Main content area
 st.title("Mistral OCR")
 st.markdown("""
-    This application allows you to extract information from pdf/image based on Mistral OCR.
+    This tool allows you to extract information from PDF documents and images using Mistral's OCR capabilities.
     """)
 
-# 1. API Key Input
-api_key = st.text_input("Enter your Mistral API Key", type="password")
+# API Key validation
 if not api_key:
-    st.info("Please enter your API key to continue.")
+    st.info("Please enter your API key in the sidebar to continue.")
     st.stop()
 
 # Initialize session state variables for persistence
@@ -25,22 +40,75 @@ if "preview_src" not in st.session_state:
 if "image_bytes" not in st.session_state:
     st.session_state["image_bytes"] = []
 
-# 2. Choose file type: PDF or Image
-file_type = st.radio("Select file type", ("PDF", "Image"))
+# Input area with improved UI
+st.subheader("Document Input")
 
-# 3. Select source type: URL or Local Upload
-source_type = st.radio("Select source type", ("URL", "Local Upload"))
+# Create a card-like container for the input options
+with st.container():
+    # Add some padding and a border to create a card effect
+    st.markdown("""
+    <style>
+    .stExpander {
+        border: 1px solid #e6e6e6;
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 20px;
+        background-color: #f9f9f9;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # First row - file type selection with icons
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("##### Select Document Type")
+        file_type = st.radio(
+            "Select file type",
+            ("PDF", "Image"),
+            label_visibility="collapsed",
+            horizontal=True,
+            index=0
+        )
+    
+    with col2:
+        st.markdown("##### Select Input Method")
+        source_type = st.radio(
+            "Select source type",
+            ("URL", "Local Upload"),
+            label_visibility="collapsed",
+            horizontal=True,
+            index=0
+        )
+    
+    # Second row - input field based on selection
+    st.markdown("---")
+    
+    input_url = ""
+    uploaded_files = []
+    
+    if source_type == "URL":
+        input_url = st.text_area(
+            f"Enter {'PDF' if file_type == 'PDF' else 'image'} URLs (one per line)",
+            placeholder=f"https://example.com/sample.{'pdf' if file_type == 'PDF' else 'jpg'}"
+        )
+    else:
+        file_types = ["pdf"] if file_type == "PDF" else ["jpg", "jpeg", "png"]
+        uploaded_files = st.file_uploader(
+            f"Upload {file_type.lower()} file(s)",
+            type=file_types,
+            accept_multiple_files=True
+        )
 
-input_url = ""
-uploaded_files = []
+# Process Button with improved styling
+process_button = st.button(
+    "📄 Process Document", 
+    type="primary", 
+    use_container_width=True
+)
 
-if source_type == "URL":
-    input_url = st.text_area("Enter one or multiple URLs (separate with new lines)")
-else:
-    uploaded_files = st.file_uploader("Upload one or more files", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)
-
-# 4. Process Button & OCR Handling
-if st.button("Process"):
+# OCR Processing
+if process_button:
     if source_type == "URL" and not input_url.strip():
         st.error("Please enter at least one valid URL.")
     elif source_type == "Local Upload" and not uploaded_files:
@@ -53,29 +121,32 @@ if st.button("Process"):
         
         sources = input_url.split("\n") if source_type == "URL" else uploaded_files
         
-        for idx, source in enumerate(sources):
-            if file_type == "PDF":
-                if source_type == "URL":
-                    document = {"type": "document_url", "document_url": source.strip()}
-                    preview_src = source.strip()
+        with st.status("Processing documents...") as status:
+            progress_bar = st.progress(0)
+            for idx, source in enumerate(sources):
+                st.write(f"Processing document {idx+1} of {len(sources)}")
+                
+                if file_type == "PDF":
+                    if source_type == "URL":
+                        document = {"type": "document_url", "document_url": source.strip()}
+                        preview_src = source.strip()
+                    else:
+                        file_bytes = source.read()
+                        encoded_pdf = base64.b64encode(file_bytes).decode("utf-8")
+                        document = {"type": "document_url", "document_url": f"data:application/pdf;base64,{encoded_pdf}"}
+                        preview_src = f"data:application/pdf;base64,{encoded_pdf}"
                 else:
-                    file_bytes = source.read()
-                    encoded_pdf = base64.b64encode(file_bytes).decode("utf-8")
-                    document = {"type": "document_url", "document_url": f"data:application/pdf;base64,{encoded_pdf}"}
-                    preview_src = f"data:application/pdf;base64,{encoded_pdf}"
-            else:
-                if source_type == "URL":
-                    document = {"type": "image_url", "image_url": source.strip()}
-                    preview_src = source.strip()
-                else:
-                    file_bytes = source.read()
-                    mime_type = source.type
-                    encoded_image = base64.b64encode(file_bytes).decode("utf-8")
-                    document = {"type": "image_url", "image_url": f"data:{mime_type};base64,{encoded_image}"}
-                    preview_src = f"data:{mime_type};base64,{encoded_image}"
-                    st.session_state["image_bytes"].append(file_bytes)
-            
-            with st.spinner(f"Processing {source if source_type == 'URL' else source.name}..."):
+                    if source_type == "URL":
+                        document = {"type": "image_url", "image_url": source.strip()}
+                        preview_src = source.strip()
+                    else:
+                        file_bytes = source.read()
+                        mime_type = source.type
+                        encoded_image = base64.b64encode(file_bytes).decode("utf-8")
+                        document = {"type": "image_url", "image_url": f"data:{mime_type};base64,{encoded_image}"}
+                        preview_src = f"data:{mime_type};base64,{encoded_image}"
+                        st.session_state["image_bytes"].append(file_bytes)
+                
                 try:
                     ocr_response = client.ocr.process(model="mistral-ocr-latest", document=document, include_image_base64=True)
                     time.sleep(1)  # wait 1 second between request to prevent rate limit exceeding
@@ -87,35 +158,111 @@ if st.button("Process"):
                 
                 st.session_state["ocr_result"].append(result_text)
                 st.session_state["preview_src"].append(preview_src)
+                
+                # Update progress bar
+                progress_bar.progress((idx + 1) / len(sources))
+            
+            status.update(label="Processing complete!", state="complete")
 
-# 5. Display Preview and OCR Results if available
+# Display Preview and OCR Results if available
 if st.session_state["ocr_result"]:
-    for idx, result in enumerate(st.session_state["ocr_result"]):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader(f"Input PDF {idx+1}")
-            if file_type == "PDF":
-                pdf_embed_html = f'<iframe src="{st.session_state["preview_src"][idx]}" width="100%" height="800" frameborder="0"></iframe>'
-                st.markdown(pdf_embed_html, unsafe_allow_html=True)
-            else:
-                if source_type == "Local Upload" and st.session_state["image_bytes"]:
-                    st.image(st.session_state["image_bytes"][idx])
+    st.markdown("---")
+    st.header("📑 Results")
+    
+    tabs = st.tabs([f"Document {i+1}" for i in range(len(st.session_state["ocr_result"]))])
+    
+    for idx, tab in enumerate(tabs):
+        with tab:
+            result = st.session_state["ocr_result"][idx]
+            
+            col1, col2 = st.columns(2, gap="large")
+            
+            with col1:
+                st.markdown("#### 📄 Document Preview")
+                if file_type == "PDF":
+                    pdf_embed_html = f'<iframe src="{st.session_state["preview_src"][idx]}" width="100%" height="700" frameborder="0" style="border: 1px solid #e6e6e6; border-radius: 5px;"></iframe>'
+                    st.markdown(pdf_embed_html, unsafe_allow_html=True)
                 else:
-                    st.image(st.session_state["preview_src"][idx])
-        
-        with col2:
-            st.subheader(f"Download OCR results {idx+1}")
+                    if source_type == "Local Upload" and st.session_state["image_bytes"]:
+                        st.image(st.session_state["image_bytes"][idx], use_column_width=True, caption="Uploaded Image")
+                    else:
+                        st.image(st.session_state["preview_src"][idx], use_column_width=True, caption="Input Image")
             
-            def create_download_link(data, filetype, filename):
-                b64 = base64.b64encode(data.encode()).decode()
-                href = f'<a href="data:{filetype};base64,{b64}" download="{filename}">Download {filename}</a>'
-                st.markdown(href, unsafe_allow_html=True)
-            
-            json_data = json.dumps({"ocr_result": result}, ensure_ascii=False, indent=2)
-            create_download_link(json_data, "application/json", f"Output_{idx+1}.json") # json output
-            create_download_link(result, "text/plain", f"Output_{idx+1}.txt") # plain text output
-            create_download_link(result, "text/markdown", f"Output_{idx+1}.md") # markdown output
-
-            # To preview results
-            st.write(st.session_state["ocr_result"])
+            with col2:
+                st.markdown("#### 📝 OCR Results")
+                
+                def create_download_link(data, filetype, filename, button_text, format_color):
+                    b64 = base64.b64encode(data.encode()).decode()
+                    btn_style = """
+                        <style>
+                        .download-button {
+                            display: inline-flex;
+                            align-items: center;
+                            justify-content: center;
+                            gap: 8px;
+                            padding: 8px 16px;
+                            background-color: #ffffff;
+                            color: #333333;
+                            text-decoration: none;
+                            border-radius: 6px;
+                            margin: 8px;
+                            text-align: center;
+                            transition: all 0.2s ease;
+                            font-weight: 500;
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+                            border: 1px solid #e0e0e0;
+                            min-width: 120px;
+                        }
+                        .download-button:hover {
+                            background-color: #f5f5f5;
+                            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+                            transform: translateY(-1px);
+                        }
+                        .download-icon {
+                            color: #555;
+                            margin-right: 4px;
+                        }
+                        .format-badge {
+                            font-size: 12px;
+                            padding: 2px 6px;
+                            border-radius: 4px;
+                            color: white;
+                            background-color: ${formatColor};
+                            font-weight: bold;
+                        }
+                        </style>
+                    """.replace("${formatColor}", format_color)
+                    
+                    # SVG download icon
+                    download_icon = """
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" class="download-icon">
+                      <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                      <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+                    </svg>
+                    """
+                    
+                    href = f'{btn_style}<a class="download-button" href="data:{filetype};base64,{b64}" download="{filename}">{download_icon} Download <span class="format-badge">{button_text}</span></a>'
+                    return href
+                
+                # Create download links with better styling and icons
+                json_data = json.dumps({"ocr_result": result}, ensure_ascii=False, indent=2)
+                
+                st.markdown("##### Download Results:")
+                download_links = "<div style='margin: 15px 0px; display: flex; flex-wrap: wrap; gap: 5px;'>"
+                download_links += create_download_link(json_data, "application/json", f"Output_{idx+1}.json", "JSON", "#2196F3")
+                download_links += create_download_link(result, "text/plain", f"Output_{idx+1}.txt", "TXT", "#4CAF50") 
+                download_links += create_download_link(result, "text/markdown", f"Output_{idx+1}.md", "MD", "#FF9800")
+                download_links += "</div>"
+                
+                st.markdown(download_links, unsafe_allow_html=True)
+                
+                # Results display with scrollable area and better styling
+                st.markdown("##### Extracted Text:")
+                st.markdown(
+                    f"""<div style='height: 550px; overflow-y: auto; 
+                    padding: 15px; border: 1px solid #e6e6e6; border-radius: 5px; 
+                    background-color: #fafafa; font-family: monospace; line-height: 1.5;'>
+                    {result.replace(chr(10), '<br>')}
+                    </div>""", 
+                    unsafe_allow_html=True
+                )
