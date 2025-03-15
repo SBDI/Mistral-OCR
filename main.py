@@ -22,10 +22,7 @@ with st.sidebar:
 
 
 # Main content area
-st.title("Mistral OCR")
-st.markdown("""
-    This tool allows you to extract information from PDF documents and images using Mistral's OCR capabilities.
-    """)
+st.title("Mistral OCR Test")
 
 # API Key validation
 if not api_key:
@@ -184,9 +181,9 @@ if st.session_state["ocr_result"]:
                     st.markdown(pdf_embed_html, unsafe_allow_html=True)
                 else:
                     if source_type == "Local Upload" and st.session_state["image_bytes"]:
-                        st.image(st.session_state["image_bytes"][idx], use_column_width=True, caption="Uploaded Image")
+                        st.image(st.session_state["image_bytes"][idx], use_container_width=True, caption="Uploaded Image")
                     else:
-                        st.image(st.session_state["preview_src"][idx], use_column_width=True, caption="Input Image")
+                        st.image(st.session_state["preview_src"][idx], use_container_width=True, caption="Input Image")
             
             with col2:
                 st.markdown("#### 📝 OCR Results")
@@ -256,13 +253,82 @@ if st.session_state["ocr_result"]:
                 
                 st.markdown(download_links, unsafe_allow_html=True)
                 
-                # Results display with scrollable area and better styling
+                # Results display with dynamic height and RTL support
                 st.markdown("##### Extracted Text:")
+                
+                # Custom CSS for the text container
+                st.markdown("""
+                    <style>
+                    .text-container {
+                        padding: 15px;
+                        border: 1px solid #e6e6e6;
+                        border-radius: 5px;
+                        background-color: #fafafa;
+                        font-family: 'Noto Sans', sans-serif;
+                        line-height: 1.6;
+                        direction: auto;
+                        text-align: start;
+                        min-height: 100px;
+                        max-height: 800px;
+                        overflow-y: auto;
+                        white-space: pre-wrap;
+                        word-wrap: break-word;
+                    }
+                    
+                    /* Custom scrollbar styling */
+                    .text-container::-webkit-scrollbar {
+                        width: 8px;
+                    }
+                    
+                    .text-container::-webkit-scrollbar-track {
+                        background: #f1f1f1;
+                        border-radius: 4px;
+                    }
+                    
+                    .text-container::-webkit-scrollbar-thumb {
+                        background: #888;
+                        border-radius: 4px;
+                    }
+                    
+                    .text-container::-webkit-scrollbar-thumb:hover {
+                        background: #666;
+                    }
+                    
+                    /* RTL specific styles */
+                    .text-container[dir="rtl"] {
+                        font-family: 'Noto Naskh Arabic', 'Noto Sans', sans-serif;
+                    }
+                    </style>
+                """, unsafe_allow_html=True)
+                
+                # Function to detect if text contains RTL script
+                def contains_rtl(text):
+                    # Unicode ranges for RTL scripts (Arabic, Hebrew, etc.)
+                    rtl_ranges = [
+                        (0x0590, 0x05FF),   # Hebrew
+                        (0x0600, 0x06FF),   # Arabic
+                        (0x0750, 0x077F),   # Arabic Supplement
+                        (0x08A0, 0x08FF),   # Arabic Extended-A
+                        (0xFB50, 0xFDFF),   # Arabic Presentation Forms-A
+                        (0xFE70, 0xFEFF),   # Arabic Presentation Forms-B
+                    ]
+                    
+                    for char in text:
+                        code = ord(char)
+                        for start, end in rtl_ranges:
+                            if start <= code <= end:
+                                return True
+                    return False
+                
+                # Determine text direction
+                is_rtl = contains_rtl(result)
+                dir_attr = 'rtl' if is_rtl else 'ltr'
+                align_attr = 'right' if is_rtl else 'left'
+                
+                # Display the text with appropriate direction and styling
                 st.markdown(
-                    f"""<div style='height: 550px; overflow-y: auto; 
-                    padding: 15px; border: 1px solid #e6e6e6; border-radius: 5px; 
-                    background-color: #fafafa; font-family: monospace; line-height: 1.5;'>
+                    f"""<div class="text-container" dir="{dir_attr}" style="text-align: {align_attr};">
                     {result.replace(chr(10), '<br>')}
-                    </div>""", 
+                    </div>""",
                     unsafe_allow_html=True
                 )
